@@ -14,7 +14,7 @@ return new class extends Migration
     {
         Schema::create('article_fighter', function (Blueprint $table) {
         
-        
+            
             $table->timestampTz('created_at')->defaultRaw('now()');
             $table->timestampTz('updated_at')->defaultRaw('now()');
 
