@@ -3,6 +3,9 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Laravel\Sanctum\Sanctum;
+use Laravel\Sanctum\PersonalAccessToken;
+
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -14,11 +17,10 @@ class AppServiceProvider extends ServiceProvider
         //
     }
 
-    /**
-     * Bootstrap any application services.
-     */
-    public function boot(): void
-    {
-        //
-    }
+public function boot(): void
+{
+    // Force Sanctum à accepter que les identifiants des modèles liés soient des chaînes (UUID)
+    Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
+}
+
 }

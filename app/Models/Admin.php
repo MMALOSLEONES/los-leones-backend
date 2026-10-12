@@ -5,14 +5,16 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 
 // "Authenticatable" permet d'utiliser ce modèle pour connecter l'admin (Login)
 class Admin extends Authenticatable
 {
-    use HasFactory, Notifiable;
+   use HasApiTokens, HasFactory, Notifiable, HasUuids;
 
     protected $table = 'admins';
-
+    
     /**
      * 2. LA CLÉ PRIMAIRE (UUID)
      * On désactive l'auto-incrémentation (1, 2, 3...) car c'est un UUID.
