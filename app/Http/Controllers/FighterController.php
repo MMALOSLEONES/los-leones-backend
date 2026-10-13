@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Fighter;
 use Illuminate\Http\Request;
 use App\Services\FighterService;
 use Illuminate\Http\JsonResponse;
@@ -47,5 +48,14 @@ class FighterController extends Controller
             'message' => 'Combattant créé avec succès !',
             'data' => $fighter
         ], 201);
+    }
+    public function index()
+    {
+        return Fighter::latest()->get();
+    }
+    public function destroy(string $id)
+    {
+        Fighter::findOrFail($id)->delete();
+        return response()->json(['message' => 'Fighter supprimé.']);
     }
 }

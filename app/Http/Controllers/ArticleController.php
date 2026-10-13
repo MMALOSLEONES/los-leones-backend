@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Article;
 use Illuminate\Http\Request;
 use App\Services\ArticleService;
 use Illuminate\Http\JsonResponse;
@@ -84,4 +85,6 @@ class ArticleController extends Controller
             'message' => 'Article supprimé définitivement.'
         ], 200);
     }
+    public function indexAdmin() { return Article::latest()->get(); }
 }
+

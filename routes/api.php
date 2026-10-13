@@ -5,6 +5,7 @@ use App\Http\Controllers\CandidatureController;
 use App\Http\Controllers\FighterController;
 use App\Http\Controllers\ArticleController;
 use App\Http\Controllers\AuthController;
+use Illuminate\Http\Request;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -15,7 +16,7 @@ Route::get('/articles/{id}', [ArticleController::class, 'show']);
 
 
 Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
-    
+
     // Déconnexion
     Route::post('/logout', [AuthController::class, 'logout']);
 
@@ -28,9 +29,18 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
 
     // Gestion des fighters
     Route::post('/fighters', [FighterController::class, 'store']);
+    Route::get('/fighters', [FighterController::class, 'index']);
+    Route::delete('/fighters/{id}', [FighterController::class, 'destroy']);
 
     // Gestion des articles
     Route::post('/articles', [ArticleController::class, 'store']);
     Route::put('/articles/{id}', [ArticleController::class, 'update']);
     Route::delete('/articles/{id}', [ArticleController::class, 'destroy']);
+    Route::get('/articles', [ArticleController::class, 'indexAdmin']);
+
+    Route::get('/me', fn(Request $request) => $request->user());
 });
+
+
+
+
