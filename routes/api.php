@@ -12,6 +12,8 @@ Route::post('/login', [AuthController::class, 'login']);
 
 Route::post('/candidatures', [CandidatureController::class, 'store']);
 Route::get('/articles', [ArticleController::class, 'index']);
+Route::get('/fighters', [FighterController::class, 'index']);
+ Route::get('/fighters/{id}', [FighterController::class, 'show']);
 Route::get('/articles/{id}', [ArticleController::class, 'show']);
 
 

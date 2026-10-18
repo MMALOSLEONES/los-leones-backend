@@ -49,13 +49,38 @@ class FighterController extends Controller
             'data' => $fighter
         ], 201);
     }
-    public function index()
-    {
-        return Fighter::latest()->get();
-    }
+
     public function destroy(string $id)
     {
         Fighter::findOrFail($id)->delete();
         return response()->json(['message' => 'Fighter supprimé.']);
+    }
+
+    public function index(): JsonResponse
+    {
+        // Récupère uniquement les combattants actifs et triés par nouveauté
+        // Vous pouvez ajouter une condition comme : ->where('is_purchasable', true) si vous avez ce champ
+        $fighters = Fighter::where('is_active', true)
+            ->latest()
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $fighters
+        ], 200);
+    }
+
+    /**
+     * Afficher les détails d'un combattant spécifique de la boutique.
+     * Route : GET /api/store/fighters/{id}
+     */
+    public function show(string $id): JsonResponse
+    {
+        $fighter = Fighter::where('is_active', true)->findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'data' => $fighter
+        ], 200);
     }
 }
