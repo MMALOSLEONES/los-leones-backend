@@ -13,7 +13,7 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/candidatures', [CandidatureController::class, 'store']);
 Route::get('/articles', [ArticleController::class, 'index']);
 Route::get('/fighters', [FighterController::class, 'index']);
- Route::get('/fighters/{id}', [FighterController::class, 'show']);
+Route::get('/fighters/{id}', [FighterController::class, 'show']);
 Route::get('/articles/{id}', [ArticleController::class, 'show']);
 
 
@@ -28,6 +28,7 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::put('/candidatures/{id}', [CandidatureController::class, 'update']);
     Route::delete('/candidatures/{id}', [CandidatureController::class, 'destroy']);
     Route::post('/candidatures/{id}/promouvoir', [CandidatureController::class, 'promouvoirEnFighter']);
+    Route::get('/candidatures/{id}/photo', [CandidatureController::class, 'photo']);
 
     // Gestion des fighters
     Route::post('/fighters', [FighterController::class, 'store']);
@@ -41,8 +42,8 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::get('/articles', [ArticleController::class, 'indexAdmin']);
 
     Route::get('/me', fn(Request $request) => $request->user());
+
+    Route::post('/fighters/{id}/photo', [FighterController::class, 'updatePhoto']);
+    Route::post('/articles/{id}/photos', [ArticleController::class, 'addPhoto']);
+    Route::delete('/articles/{id}/photos/{photoId}', [ArticleController::class, 'removePhoto']);
 });
-
-
-
-

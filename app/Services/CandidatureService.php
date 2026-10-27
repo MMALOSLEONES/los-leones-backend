@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\Demande;
 use App\Models\Fighter;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 
 class CandidatureService
@@ -53,7 +55,7 @@ class CandidatureService
                 'nom'    => $candidature->nom,
                 'prenom' => $candidature->prenom,
                 'niveau' => $candidature->experience_niveau,
-                'photo'  => $candidature->photo,
+                'photo'  => $this->copierPhoto($candidature->photo),
                 'is_active' => true,
             ]);
 
@@ -61,5 +63,31 @@ class CandidatureService
 
             return $fighter;
         });
+    }
+
+    // Le fighter reçoit SA PROPRE copie du fichier : supprimer la candidature
+    // plus tard ne fera pas disparaître la photo du site.
+    private function copierPhoto(?string $chemin): ?string
+    {
+        if (! $chemin) {
+            return null;
+        }
+
+        $source = Storage::disk(config('filesystems.private_uploads_disk') ?? 'local');
+        $cible = Storage::disk(config('filesystems.uploads_disk') ?? 'public');
+
+        if (! $source->exists($chemin)) {
+            return null;
+        }
+
+        $nouveau = 'fighters/' . Str::uuid() . '.' . pathinfo($chemin, PATHINFO_EXTENSION);
+
+        $flux = $source->readStream($chemin);
+        $cible->writeStream($nouveau, $flux);
+        if (is_resource($flux)) {
+            fclose($flux);
+        }
+
+        return $nouveau;
     }
 }

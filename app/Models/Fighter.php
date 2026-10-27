@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\ResolvesStorageUrl;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;     
 
 class Fighter extends Model
 {
-    use HasFactory,HasUuids;
+    use HasFactory, HasUuids, ResolvesStorageUrl;
 
     public $incrementing = false;
     protected $keyType = 'string';
@@ -34,14 +35,29 @@ class Fighter extends Model
         'is_active',
     ];
 
-    public function fighters()
-    {
-        return $this->belongsToMany(Fighter::class, 'article_fighter');
-    }
-
-
-    // Force Laravel à traiter "is_active" comme un vrai booléen PHP (true/false)
     protected $casts = [
         'is_active' => 'boolean',
     ];
+
+    // Ajoute "photo_url" à chaque réponse JSON : c'est elle que le site affiche
+    protected $appends = ['photo_url'];
+
+    public function getPhotoUrlAttribute(): ?string
+    {
+        return $this->storageUrl($this->photo);
+    }
+
+    // Les articles qui mentionnent ce fighter
+    public function articles()
+    {
+        return $this->belongsToMany(Article::class, 'article_fighter');
+    }
+
+    protected static function booted(): void
+    {
+        // Supprimer un fighter supprime aussi son fichier photo
+        static::deleting(function (Fighter $fighter) {
+            $fighter->deleteStoredFile($fighter->photo);
+        });
+    }
 }

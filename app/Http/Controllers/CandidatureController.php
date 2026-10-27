@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Services\CandidatureService;
 use Illuminate\Http\JsonResponse;
+use App\Http\Requests\StoreCandidatureRequest;
+use App\Models\Demande;
+use Illuminate\Support\Facades\Storage;
 
 class CandidatureController extends Controller
 {
@@ -14,52 +17,30 @@ class CandidatureController extends Controller
     {
         $this->candidatureService = $candidatureService;
     }
-    public function store(Request $request): JsonResponse
+    public function store(StoreCandidatureRequest $request): JsonResponse
     {
-        $donneesValidees = $request->validate([
+        $donnees = $request->safe()->except('photo');
+        $donnees['photo'] = $request->file('photo')->store('candidatures', config('filesystems.private_uploads_disk') ?? 'local');
+        $donnees['consent_accepted_at'] = now();
+        $donnees['status'] = 'en_attente_paiement'; // jamais fourni par le visiteur
 
-            'nom' => 'required|string|max:255',
-            'prenom' => 'required|string|max:255',
-            'tel' => 'required|string|max:50',
-            'date_naissance' => 'required|date',
+        $candidature = $this->candidatureService->creerCandidature($donnees);
 
-            'mail' => 'nullable|email|max:255',
-            'ville' => 'nullable|string|max:255',
-            'motivation' => 'nullable|string',
-            'photo' => 'nullable|string', // URL ou chemin de la photo
-            'annee_experience' => 'nullable|integer|min:0',
-
-
-            'a_experience_combat' => 'boolean',
-
-            'experience_niveau' => 'nullable|in:debutant,intermediaire,avance,professionnel',
-            'comment_connu' => 'nullable|in:instagram,tiktok,facebook,whatsapp,recommandation,google,autre',
-            'status' => 'string|in:en_attente_paiement,paye,approuve,refuse',
-
-        ]);
-
-
-        $candidature = $this->candidatureService->creerCandidature($donneesValidees);
-
-        // Étape 3 : Réponse HTTP
-        return response()->json([
-            'message' => 'Candidature enregistrée avec succès !',
-            'data' => $candidature
-        ], 201);
+        return response()->json(['message' => 'Candidature enregistrée avec succès !', 'data' => $candidature], 201);
     }
 
 
-      public function index(): JsonResponse
+    public function index(): JsonResponse
     {
         $candidatures = $this->candidatureService->recupererTout();
-        
+
         return response()->json($candidatures, 200);
     }
 
     public function show(string $id): JsonResponse
     {
         $candidature = $this->candidatureService->trouverParId($id);
-        
+
         return response()->json($candidature, 200);
     }
 
@@ -79,7 +60,7 @@ class CandidatureController extends Controller
         ], 200);
     }
 
-       public function destroy(string $id): JsonResponse
+    public function destroy(string $id): JsonResponse
     {
         $this->candidatureService->supprimer($id);
 
@@ -88,7 +69,7 @@ class CandidatureController extends Controller
         ], 200);
     }
 
-     public function promouvoirEnFighter(string $id): JsonResponse
+    public function promouvoirEnFighter(string $id): JsonResponse
     {
         $fighter = $this->candidatureService->transformerEnFighter($id);
 
@@ -96,5 +77,18 @@ class CandidatureController extends Controller
             'message' => 'La candidature a été validée et le combattant a été créé avec succès !',
             'fighter' => $fighter
         ], 201);
+    }
+    // Photo d'un candidat : réservée à l'admin connecté
+    public function photo(string $id)
+    {
+        $demande = Demande::findOrFail($id);
+        abort_unless($demande->photo, 404);
+
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk(config('filesystems.private_uploads_disk') ?? 'local');
+        abort_unless($disk->exists($demande->photo), 404);
+
+        // Servie à travers Laravel : le fichier n'a jamais d'adresse publique
+        return $disk->response($demande->photo, null, ['Cache-Control' => 'private, max-age=300']);
     }
 }

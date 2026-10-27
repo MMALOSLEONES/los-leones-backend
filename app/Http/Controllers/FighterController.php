@@ -6,6 +6,7 @@ use App\Models\Fighter;
 use Illuminate\Http\Request;
 use App\Services\FighterService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
 
 class FighterController extends Controller
 {
@@ -82,5 +83,27 @@ class FighterController extends Controller
             'success' => true,
             'data' => $fighter
         ], 200);
+    }
+
+    // Ajoute OU remplace la photo d'un fighter
+    public function updatePhoto(Request $request, string $id): JsonResponse
+    {
+        $request->validate([
+            'photo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'], // 5 Mo
+        ]);
+
+        $fighter = Fighter::findOrFail($id);
+        $disk = config('filesystems.uploads_disk') ?? 'public';
+
+        $ancien = $fighter->photo;
+        $fighter->photo = $request->file('photo')->store('fighters', $disk);
+        $fighter->save();
+
+        // L'ancien fichier n'est supprimé qu'une fois le nouveau bien enregistré
+        if ($ancien && ! str_starts_with($ancien, 'http')) {
+            Storage::disk($disk)->delete($ancien);
+        }
+
+        return response()->json(['message' => 'Photo mise à jour.', 'data' => $fighter], 200);
     }
 }
