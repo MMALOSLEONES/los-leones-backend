@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
+use App\Services\WeightCategoryService;
 
 class Demande extends Model
 {
@@ -41,6 +42,7 @@ class Demande extends Model
         'status',
         'reviewed_by',
         'reviewed_at',
+        'poids_kg'
     ];
 
     protected $casts = [
@@ -48,17 +50,28 @@ class Demande extends Model
         'a_fait_competitions' => 'boolean',
         'consent_accepted' => 'boolean',
         'consent_accepted_at' => 'datetime',
+        'poids_kg' => 'float',
     ];
 
     // La photo d'un candidat est une donnée personnelle : elle n'a JAMAIS d'adresse publique.
     // Le JSON indique seulement si une photo existe ; l'admin la récupère via
     // GET /admin/candidatures/{id}/photo, qui exige d'être connecté.
     protected $hidden = ['photo'];
-    protected $appends = ['has_photo'];
+    protected $appends = ['has_photo', 'categorie_estimee'];
 
     public function getHasPhotoAttribute(): bool
     {
         return ! empty($this->photo);
+    }
+
+    // Catégorie déduite du poids déclaré (estimation, l'admin tranche à la validation)
+    public function getCategorieEstimeeAttribute(): ?string
+    {
+        if ($this->poids_kg === null) {
+            return null;
+        }
+
+        return app(WeightCategoryService::class)->pourPoids((float) $this->poids_kg);
     }
 
     protected static function booted(): void

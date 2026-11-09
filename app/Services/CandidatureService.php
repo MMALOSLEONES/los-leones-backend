@@ -56,6 +56,7 @@ class CandidatureService
                 'prenom' => $candidature->prenom,
                 'niveau' => $candidature->experience_niveau,
                 'photo'  => $this->copierPhoto($candidature->photo),
+                'poids_kg' => $candidature->poids_kg,
                 'is_active' => true,
             ]);
 

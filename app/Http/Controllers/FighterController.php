@@ -40,7 +40,8 @@ class FighterController extends Controller
             'palmares' => 'nullable|string',
             'bio' => 'nullable|string',
             'photo' => 'nullable|string',
-            'is_active' => 'boolean'
+            'is_active' => 'boolean',
+            'poids_kg' => ['nullable', 'numeric', 'between:30,250'],
         ]);
 
         $fighter = $this->fighterService->creerFighter($donneesValidees);

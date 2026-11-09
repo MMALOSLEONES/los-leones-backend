@@ -41,6 +41,9 @@ class StoreCandidatureRequest extends FormRequest
             'photo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'], // 5 Mo
             'consent_accepted' => ['accepted'],
             // "status" n'est volontairement PAS listé : un visiteur ne décide jamais du statut
+
+            // "nullable" pendant la transition. Une fois le site mis à jour (étape 5.5), remplace par "required".
+            'poids_kg' => ['nullable', 'numeric', 'between:40,200', 'decimal:0,1'],
         ];
     }
 
@@ -83,6 +86,9 @@ class StoreCandidatureRequest extends FormRequest
             'photo.mimes' => 'La photo doit être au format JPG, PNG ou WebP.',
             'photo.max' => 'La photo ne doit pas dépasser 5 Mo.',
             'consent_accepted.accepted' => 'Le consentement est obligatoire.',
+            'poids_kg.numeric' => 'Le poids doit être un nombre.',
+            'poids_kg.between' => 'Le poids doit être compris entre 40 et 200 kg.',
+            'poids_kg.decimal' => 'Le poids ne peut avoir qu\'un chiffre après la virgule.',
         ];
     }
 
@@ -97,6 +103,7 @@ class StoreCandidatureRequest extends FormRequest
             'experience_niveau' => 'niveau',
             'nombre_combats' => 'nombre de combats',
             'comment_connu' => 'source',
+            'poids_kg' => 'poids'
         ];
     }
 }
