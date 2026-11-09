@@ -44,26 +44,33 @@ class CandidatureService
     }
     public function transformerEnFighter(string $id): Fighter
     {
-        return DB::transaction(function () use ($id) {
-            $candidature = Demande::lockForUpdate()->findOrFail($id);
+       return DB::transaction(function () use ($id) {
+    $candidature = Demande::lockForUpdate()->findOrFail($id);
 
-            if ($candidature->status === 'approuve') {
-                abort(409, 'Cette candidature est déjà validée.');
-            }
+    if ($candidature->status === 'approuve') {
+        abort(409, 'Cette candidature est déjà validée.');
+    }
 
-            $fighter = Fighter::create([
-                'nom'    => $candidature->nom,
-                'prenom' => $candidature->prenom,
-                'niveau' => $candidature->experience_niveau,
-                'photo'  => $this->copierPhoto($candidature->photo),
-                'poids_kg' => $candidature->poids_kg,
-                'is_active' => true,
-            ]);
+    $fighter = Fighter::create([
+        'nom'             => $candidature->nom,
+        'prenom'          => $candidature->prenom,
+        'niveau'          => $candidature->experience_niveau,
+        'photo'           => $this->copierPhoto($candidature->photo),
+        'poids_kg'        => $candidature->poids_kg,
+        'is_active'       => true,
+        'combat'          => $candidature->combats ?? 0,
+        'victoire'        => $candidature->victoires ?? 0,
+        'defaite'         => $candidature->defaites ?? 0,
+        'nul'             => $candidature->nuls ?? 0,
+        'ko'              => $candidature->ko ?? 0,
+        'soumission'      => $candidature->soumissions ?? 0,
+    ]);
 
-            $candidature->update(['status' => 'approuve', 'reviewed_at' => now()]);
+    $candidature->update(['status' => 'approuve', 'reviewed_at' => now()]);
 
-            return $fighter;
-        });
+    return $fighter;
+});
+
     }
 
     // Le fighter reçoit SA PROPRE copie du fichier : supprimer la candidature
