@@ -75,27 +75,37 @@ class CandidatureService
 
     // Le fighter reçoit SA PROPRE copie du fichier : supprimer la candidature
     // plus tard ne fera pas disparaître la photo du site.
-    private function copierPhoto(?string $chemin): ?string
-    {
-        if (! $chemin) {
-            return null;
-        }
-
-        $source = Storage::disk(config('filesystems.private_uploads_disk') ?? 'local');
-        $cible = Storage::disk(config('filesystems.uploads_disk') ?? 'public');
-
-        if (! $source->exists($chemin)) {
-            return null;
-        }
-
-        $nouveau = 'fighters/' . Str::uuid() . '.' . pathinfo($chemin, PATHINFO_EXTENSION);
-
-        $flux = $source->readStream($chemin);
-        $cible->writeStream($nouveau, $flux);
-        if (is_resource($flux)) {
-            fclose($flux);
-        }
-
-        return $nouveau;
+private function copierPhoto(?string $chemin): ?string
+{
+    if (! $chemin) {
+        return null;
     }
+
+    $source = Storage::disk(config('filesystems.private_uploads_disk') ?? 'local');
+    $cible = Storage::disk(config('filesystems.uploads_disk') ?? 'public');
+
+    // Vérification de l'existence
+    if (! $source->exists($chemin)) {
+        return null;
+    }
+
+    // Récupérer l'extension de manière sécurisée
+    $extension = pathinfo($chemin, PATHINFO_EXTENSION) ?: 'jpg'; // 'jpg' par défaut si Cloudinary ne fournit pas l'extension dans le nom
+    $nouveauNom = 'fighters/' . Str::uuid() . '.' . $extension;
+
+    try {
+        // En ligne avec Cloudinary, récupérer le contenu brut est beaucoup plus fiable que le readStream
+        $contenuFichier = $source->get($chemin);
+        
+        // On écrit directement le contenu dans le disque cible
+        $cible->put($nouveauNom, $contenuFichier);
+        
+        return $nouveauNom;
+    } catch (\Exception $e) {
+        // Optionnel : Vous pouvez logguer l'erreur pour voir ce qui bloque précisément en ligne
+      \Illuminate\Support\Facades\Log::error("Erreur lors de la copie de la photo sur Cloudinary: " . $e->getMessage());
+        return null;
+    }
+}
+
 }
