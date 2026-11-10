@@ -17,18 +17,69 @@ class CandidatureController extends Controller
     {
         $this->candidatureService = $candidatureService;
     }
+
+    /**
+     * POST /api/candidatures - Enregistrement global de l'onboarding
+     */
     public function store(StoreCandidatureRequest $request): JsonResponse
     {
-        $donnees = $request->safe()->except('photo');
-        $donnees['photo'] = $request->file('photo')->store('candidatures', config('filesystems.private_uploads_disk') ?? 'local');
+        // 1. On sépare les champs de texte des tableaux de fichiers pour le nettoyage
+        $donnees = $request->safe()->except(['photo', 'photos', 'videos']);
         $donnees['consent_accepted_at'] = now();
         $donnees['status'] = 'en_attente_paiement'; // jamais fourni par le visiteur
 
+        $diskPrive = config('filesystems.private_uploads_disk') ?? 'local';
+
+        // 2. CORRECTION : Extraction sécurisée du premier fichier du tableau pour l'ancienne colonne de secours
+        if ($request->hasFile('photos')) {
+            $toutesLesPhotos = $request->file('photos');
+            // reset() permet d'isoler proprement le premier fichier physique (Couverture)
+            $premierePhoto = reset($toutesLesPhotos); 
+            
+            if ($premierePhoto) {
+                $donnees['photo'] = $premierePhoto->store('candidatures', $diskPrive);
+            }
+        }
+
+        // 3. Création initiale de la demande d'inscription
         $candidature = $this->candidatureService->creerCandidature($donnees);
 
-        return response()->json(['message' => 'Candidature enregistrée avec succès !', 'data' => $candidature], 201);
-    }
+        // 4. Traitement et stockage du lot complet de PHOTOS (Max 10)
+        if ($request->hasFile('photos')) {
+            foreach ($request->file('photos') as $index => $photoFile) {
+                // Stockage physique sur le bucket privé R2 ou local
+                $chemin = $photoFile->store('candidatures/photos', $diskPrive);
 
+                // Association du média à la candidature
+                $candidature->media()->create([
+                    'type'     => 'photo',
+                    'chemin'   => $chemin,
+                    'position' => $index,
+                ]);
+            }
+        }
+
+        // 5. Traitement et stockage du lot complet de VIDÉOS (Max 5)
+        if ($request->hasFile('videos')) {
+            foreach ($request->file('videos') as $index => $videoFile) {
+                // Stockage physique sur le bucket privé R2 ou local
+                $chemin = $videoFile->store('candidatures/videos', $diskPrive);
+
+                // Association du média à la candidature
+                $candidature->media()->create([
+                    'type'     => 'video',
+                    'chemin'   => $chemin,
+                    'position' => $index,
+                ]);
+            }
+        }
+
+        // On recharge la relation multimédia pour renvoyer un objet complet au navigateur
+        return response()->json([
+            'message' => 'Candidature enregistrée avec succès !', 
+            'data'    => $candidature->load('media')
+        ], 201);
+    }
 
     public function index(): JsonResponse
     {
@@ -39,7 +90,7 @@ class CandidatureController extends Controller
 
     public function show(string $id): JsonResponse
     {
-        $candidature = $this->candidatureService->trouverParId($id);
+        $candidature = $this->candidatureService->trouverParId($id)->load('media');
 
         return response()->json($candidature, 200);
     }
@@ -56,7 +107,7 @@ class CandidatureController extends Controller
 
         return response()->json([
             'message' => 'Candidature mise à jour avec succès',
-            'data' => $candidature
+            'data' => $candidature->load('media')
         ], 200);
     }
 
@@ -78,6 +129,7 @@ class CandidatureController extends Controller
             'fighter' => $fighter
         ], 201);
     }
+
     // Photo d'un candidat : réservée à l'admin connecté
     public function photo(string $id)
     {

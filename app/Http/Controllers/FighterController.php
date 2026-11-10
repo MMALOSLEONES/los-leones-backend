@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use App\Services\FighterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class FighterController extends Controller
 {
@@ -18,7 +19,8 @@ class FighterController extends Controller
     }
 
     /**
-     * Route : POST /api/admin/fighters (Création directe)
+     * Route ADMIN : Création directe d'un fighter
+     * POST /api/admin/fighters
      */
     public function store(Request $request): JsonResponse
     {
@@ -52,16 +54,50 @@ class FighterController extends Controller
         ], 201);
     }
 
-    public function destroy(string $id)
+    /**
+     * Route ADMIN : Supprimer un fighter
+     * DELETE /api/admin/fighters/{id}
+     */
+    public function destroy(string $id): JsonResponse
     {
         Fighter::findOrFail($id)->delete();
         return response()->json(['message' => 'Fighter supprimé.']);
     }
 
+    /**
+     * Route ADMIN : Liste TOUS les fighters (actifs ET masqués)
+     * GET /api/admin/fighters
+     */
     public function index(): JsonResponse
     {
-        // Récupère uniquement les combattants actifs et triés par nouveauté
-        // Vous pouvez ajouter une condition comme : ->where('is_purchasable', true) si vous avez ce champ
+        $fighters = Fighter::latest()->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $fighters
+        ], 200);
+    }
+
+    /**
+     * Route ADMIN : Détails de n'importe quel fighter (actif ou masqué)
+     * GET /api/admin/fighters/{id}
+     */
+    public function show(string $id): JsonResponse
+    {
+        $fighter = Fighter::findOrFail($id);
+
+        return response()->json([
+            'success' => true,
+            'data' => $fighter
+        ], 200);
+    }
+
+    /**
+     * Route PUBLIQUE : Liste UNIQUEMENT les fighters visibles sur le site
+     * GET /api/fighters
+     */
+    public function publicIndex(): JsonResponse
+    {
         $fighters = Fighter::where('is_active', true)
             ->latest()
             ->get();
@@ -73,10 +109,10 @@ class FighterController extends Controller
     }
 
     /**
-     * Afficher les détails d'un combattant spécifique de la boutique.
-     * Route : GET /api/store/fighters/{id}
+     * Route PUBLIQUE : Détails d'un fighter visible uniquement
+     * GET /api/fighters/{id}
      */
-    public function show(string $id): JsonResponse
+    public function publicShow(string $id): JsonResponse
     {
         $fighter = Fighter::where('is_active', true)->findOrFail($id);
 
@@ -86,11 +122,50 @@ class FighterController extends Controller
         ], 200);
     }
 
-    // Ajoute OU remplace la photo d'un fighter
+    /**
+     * Route ADMIN/COMMUN : Modifier les infos d'un fighter (gère le bouton is_active)
+     * PUT /api/admin/fighters/{id}
+     */
+    public function update(Request $request, string $id): JsonResponse
+    {
+        $data = $request->validate([
+            'prenom' => ['sometimes', 'required', 'string', 'max:255'],
+            'nom' => ['sometimes', 'required', 'string', 'max:255'],
+            'surnom' => ['nullable', 'string', 'max:255'],
+            'weight_category' => ['nullable'],
+            'poids_kg' => ['nullable', 'numeric', 'between:30,250'],
+            'niveau' => ['nullable', 'in:debutant,intermediaire,avance,professionnel'],
+            'reseaux' => ['nullable', 'string', 'max:255'],
+            'bio' => ['nullable', 'string'],
+            'apropos' => ['nullable', 'string'],
+            'style_de_combat' => ['nullable', 'string'],
+            'palmares' => ['nullable', 'string'],
+            'victoire' => ['sometimes', 'integer', 'min:0', 'max:999'],
+            'defaite' => ['sometimes', 'integer', 'min:0', 'max:999'],
+            'nul' => ['sometimes', 'integer', 'min:0', 'max:999'],
+            'ko' => ['sometimes', 'integer', 'min:0', 'max:999'],
+            'soumission' => ['sometimes', 'integer', 'min:0', 'max:999'],
+            'is_active' => ['sometimes', 'boolean'], // Gère la case cochée ou non
+        ]);
+
+        $fighter = Fighter::findOrFail($id);
+        $fighter->fill($data);
+        
+        // Calcul automatique du total des combats
+        $fighter->combat = ($fighter->victoire ?? 0) + ($fighter->defaite ?? 0) + ($fighter->nul ?? 0);
+        $fighter->save();
+
+        return response()->json(['message' => 'Fighter mis à jour.', 'data' => $fighter->fresh()]);
+    }
+
+    /**
+     * Route ADMIN : Ajoute ou remplace la photo d'un fighter
+     * POST /api/admin/fighters/{id}/photo
+     */
     public function updatePhoto(Request $request, string $id): JsonResponse
     {
         $request->validate([
-            'photo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'], // 5 Mo
+            'photo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ]);
 
         $fighter = Fighter::findOrFail($id);
@@ -100,7 +175,6 @@ class FighterController extends Controller
         $fighter->photo = $request->file('photo')->store('fighters', $disk);
         $fighter->save();
 
-        // L'ancien fichier n'est supprimé qu'une fois le nouveau bien enregistré
         if ($ancien && ! str_starts_with($ancien, 'http')) {
             Storage::disk($disk)->delete($ancien);
         }

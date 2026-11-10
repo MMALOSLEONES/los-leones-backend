@@ -6,6 +6,7 @@ use App\Http\Controllers\FighterController;
 use App\Http\Controllers\ArticleController;
 use App\Http\Controllers\AuthController;
 use Illuminate\Http\Request;
+use App\Http\Controllers\FighterMediaController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -15,6 +16,8 @@ Route::get('/articles', [ArticleController::class, 'index']);
 Route::get('/fighters', [FighterController::class, 'index']);
 Route::get('/fighters/{id}', [FighterController::class, 'show']);
 Route::get('/articles/{id}', [ArticleController::class, 'show']);
+Route::get('/fighters', [FighterController::class, 'publicIndex']);
+Route::get('/fighters/{id}', [FighterController::class, 'publicShow']);
 
 
 Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
@@ -34,6 +37,8 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::post('/fighters', [FighterController::class, 'store']);
     Route::get('/fighters', [FighterController::class, 'index']);
     Route::delete('/fighters/{id}', [FighterController::class, 'destroy']);
+    Route::get('/fighters/{id}', [FighterController::class, 'show']);  // Voit tout le monde
+    Route::put('/fighters/{id}', [FighterController::class, 'update']);// Modifie et active/désactive
 
     // Gestion des articles
     Route::post('/articles', [ArticleController::class, 'store']);
@@ -46,4 +51,13 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::post('/fighters/{id}/photo', [FighterController::class, 'updatePhoto']);
     Route::post('/articles/{id}/photos', [ArticleController::class, 'addPhoto']);
     Route::delete('/articles/{id}/photos/{photoId}', [ArticleController::class, 'removePhoto']);
+
+    //gestion photos et video fighter 
+    Route::put('/fighters/{id}', [FighterController::class, 'update']);
+    Route::post('/fighters/{id}/photos', [FighterMediaController::class, 'addPhoto']);
+    Route::post('/fighters/{id}/videos/upload-url', [FighterMediaController::class, 'videoUploadUrl']);
+    Route::post('/fighters/{id}/videos', [FighterMediaController::class, 'registerVideo']);
+    Route::post('/fighters/{id}/videos/file', [FighterMediaController::class, 'addVideoFile']); 
+    Route::put('/fighters/{id}/media/{mediaId}/cover', [FighterMediaController::class, 'makeCover']);
+    Route::delete('/fighters/{id}/media/{mediaId}', [FighterMediaController::class, 'destroy']);
 });

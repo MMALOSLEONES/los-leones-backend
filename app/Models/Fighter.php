@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Services\WeightCategoryService;
+use Illuminate\Validation\Rule;
 
 class Fighter extends Model
 {
@@ -42,12 +43,18 @@ class Fighter extends Model
         'poids_kg' => 'float'
     ];
 
+    // Les photos et vidéos sont toujours chargées avec le fighter
+    protected $with = ['media'];
+
     // Ajoute "photo_url" à chaque réponse JSON : c'est elle que le site affiche
     protected $appends = ['photo_url', 'limite_categorie_kg'];
 
+    // Photo de couverture : la première photo. L'ancienne colonne "photo" sert de secours.
     public function getPhotoUrlAttribute(): ?string
     {
-        return $this->storageUrl($this->photo);
+        $couverture = $this->media->firstWhere('type', 'photo');
+
+        return $couverture?->url ?? $this->storageUrl($this->photo);
     }
 
     // Limite haute de la catégorie (ex : Welterweight → 77) : le site l'affiche sous le nom
@@ -74,9 +81,16 @@ class Fighter extends Model
             }
         });
 
-        // Supprimer un fighter supprime aussi son fichier photo
+        // Supprimer un fighter supprime aussi ses fichiers
         static::deleting(function (Fighter $fighter) {
-            $fighter->deleteStoredFile($fighter->photo);
+            $fighter->media->each->delete();
+            $fighter->deleteStoredFile($fighter->photo); // ancienne colonne, par sécurité
         });
+    }
+
+    // Photos et vidéos, dans l'ordre
+    public function media()
+    {
+        return $this->hasMany(FighterMedia::class)->orderBy('position');
     }
 }

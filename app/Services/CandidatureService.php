@@ -44,68 +44,93 @@ class CandidatureService
     }
     public function transformerEnFighter(string $id): Fighter
     {
-       return DB::transaction(function () use ($id) {
-    $candidature = Demande::lockForUpdate()->findOrFail($id);
+        return DB::transaction(function () use ($id) {
+            $candidature = Demande::lockForUpdate()->findOrFail($id);
 
-    if ($candidature->status === 'approuve') {
-        abort(409, 'Cette candidature est déjà validée.');
+            if ($candidature->status === 'approuve') {
+                abort(409, 'Cette candidature est déjà validée.');
+            }
+
+            // 1. Création du Fighter avec ses statistiques
+            $fighter = Fighter::create([
+                'nom'             => $candidature->nom,
+                'prenom'          => $candidature->prenom,
+                'niveau'          => $candidature->experience_niveau,
+                'poids_kg'        => $candidature->poids_kg,
+                'is_active'       => true,
+                'combat'          => $candidature->combats ?? 0,
+                'victoire'        => $candidature->victoires ?? 0,
+                'defaite'         => $candidature->defaites ?? 0,
+                'nul'             => $candidature->nuls ?? 0,
+                'ko'              => $candidature->ko ?? 0,
+                'soumission'      => $candidature->soumissions ?? 0,
+            ]);
+
+            // 2. MIGRATION DE TOUS LES MÉDIAS (PHOTOS ET VIDÉOS)
+            foreach ($candidature->media as $mediaCandidat) {
+                // Copie physique du fichier depuis le bucket privé vers le bucket public R2
+                $nouveauChemin = $this->copierPhoto($mediaCandidat->chemin);
+
+                if ($nouveauChemin) {
+                    $fighter->media()->create([
+                        'type'     => $mediaCandidat->type,   // 'photo' ou 'video'
+                        'chemin'   => $nouveauChemin,
+                        'position' => $mediaCandidat->position,
+                    ]);
+                }
+            }
+
+            // 3. Optionnel : Si l'ancienne colonne photo unique de la candidature contient un reliquat
+            if ($candidature->photo && $candidature->media->count() === 0) {
+                $cheminPhoto = $this->copierPhoto($candidature->photo);
+                if ($cheminPhoto) {
+                    $fighter->media()->create([
+                        'type' => 'photo',
+                        'chemin' => $cheminPhoto,
+                        'position' => 0,
+                    ]);
+                }
+            }
+
+            $candidature->update(['status' => 'approuve', 'reviewed_at' => now()]);
+
+            return $fighter->load('media');
+        });
     }
 
-    $fighter = Fighter::create([
-        'nom'             => $candidature->nom,
-        'prenom'          => $candidature->prenom,
-        'niveau'          => $candidature->experience_niveau,
-        'photo'           => $this->copierPhoto($candidature->photo),
-        'poids_kg'        => $candidature->poids_kg,
-        'is_active'       => true,
-        'combat'          => $candidature->combats ?? 0,
-        'victoire'        => $candidature->victoires ?? 0,
-        'defaite'         => $candidature->defaites ?? 0,
-        'nul'             => $candidature->nuls ?? 0,
-        'ko'              => $candidature->ko ?? 0,
-        'soumission'      => $candidature->soumissions ?? 0,
-    ]);
-
-    $candidature->update(['status' => 'approuve', 'reviewed_at' => now()]);
-
-    return $fighter;
-});
-
-    }
 
     // Le fighter reçoit SA PROPRE copie du fichier : supprimer la candidature
     // plus tard ne fera pas disparaître la photo du site.
-private function copierPhoto(?string $chemin): ?string
-{
-    if (! $chemin) {
-        return null;
+    private function copierPhoto(?string $chemin): ?string
+    {
+        if (! $chemin) {
+            return null;
+        }
+
+        $source = Storage::disk(config('filesystems.private_uploads_disk') ?? 'local');
+        $cible = Storage::disk(config('filesystems.uploads_disk') ?? 'public');
+
+        // Vérification de l'existence
+        if (! $source->exists($chemin)) {
+            return null;
+        }
+
+        // Récupérer l'extension de manière sécurisée
+        $extension = pathinfo($chemin, PATHINFO_EXTENSION) ?: 'jpg'; // 'jpg' par défaut si Cloudinary ne fournit pas l'extension dans le nom
+        $nouveauNom = 'fighters/' . Str::uuid() . '.' . $extension;
+
+        try {
+            // En ligne avec Cloudinary, récupérer le contenu brut est beaucoup plus fiable que le readStream
+            $contenuFichier = $source->get($chemin);
+
+            // On écrit directement le contenu dans le disque cible
+            $cible->put($nouveauNom, $contenuFichier);
+
+            return $nouveauNom;
+        } catch (\Exception $e) {
+            // Optionnel : Vous pouvez logguer l'erreur pour voir ce qui bloque précisément en ligne
+            \Illuminate\Support\Facades\Log::error("Erreur lors de la copie de la photo sur Cloudinary: " . $e->getMessage());
+            return null;
+        }
     }
-
-    $source = Storage::disk(config('filesystems.private_uploads_disk') ?? 'local');
-    $cible = Storage::disk(config('filesystems.uploads_disk') ?? 'public');
-
-    // Vérification de l'existence
-    if (! $source->exists($chemin)) {
-        return null;
-    }
-
-    // Récupérer l'extension de manière sécurisée
-    $extension = pathinfo($chemin, PATHINFO_EXTENSION) ?: 'jpg'; // 'jpg' par défaut si Cloudinary ne fournit pas l'extension dans le nom
-    $nouveauNom = 'fighters/' . Str::uuid() . '.' . $extension;
-
-    try {
-        // En ligne avec Cloudinary, récupérer le contenu brut est beaucoup plus fiable que le readStream
-        $contenuFichier = $source->get($chemin);
-        
-        // On écrit directement le contenu dans le disque cible
-        $cible->put($nouveauNom, $contenuFichier);
-        
-        return $nouveauNom;
-    } catch (\Exception $e) {
-        // Optionnel : Vous pouvez logguer l'erreur pour voir ce qui bloque précisément en ligne
-      \Illuminate\Support\Facades\Log::error("Erreur lors de la copie de la photo sur Cloudinary: " . $e->getMessage());
-        return null;
-    }
-}
-
 }

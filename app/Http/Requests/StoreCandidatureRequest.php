@@ -37,17 +37,23 @@ class StoreCandidatureRequest extends FormRequest
             'kos' => $compteur,
             'soumissions' => $compteur,
 
-            'comment_connu' => ['nullable', 'in:instagram,tiktok,facebook,whatsapp,recommandation,google,autre'],
-            'photo' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'], // 5 Mo
+            'comment_connu' => ['nullable', 'in:Instagram,TikTok,Facebook,WhatsApp,Recommandation,Google,Autre'],
             'consent_accepted' => ['accepted'],
-            // "status" n'est volontairement PAS listé : un visiteur ne décide jamais du statut
-
-            // "nullable" pendant la transition. Une fois le site mis à jour (étape 5.5), remplace par "required".
             'poids_kg' => ['nullable', 'numeric', 'between:40,200', 'decimal:0,1'],
+
+            // --- DEBUT DES MODIFICATIONS : MULTI-UPLOAD ---
+            // On valide le tableau de photos (au moins 1 photo requise)
+            'photos'   => ['required', 'array', 'min:1'],
+            'photos.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:5120'], // 5 Mo par photo max
+
+            // On valide le tableau de vidéos (optionnel, maximum 5 vidéos)
+            'videos'   => ['nullable', 'array', 'max:5'],
+            'videos.*' => ['file', 'mimes:mp4,webm', 'max:153600'], // 150 Mo par vidéo max
+            // --- FIN DES MODIFICATIONS ---
         ];
     }
 
-    // Règles de cohérence entre plusieurs champs
+    // Règles de cohérence entre plusieurs champs (Conservées à l'identique)
     public function after(): array
     {
         return [
@@ -82,13 +88,20 @@ class StoreCandidatureRequest extends FormRequest
             'min' => 'Le champ :attribute ne peut pas être négatif.',
             'max' => 'Le champ :attribute est trop grand.',
             'in' => 'La valeur du champ :attribute est invalide.',
-            'photo.required' => 'La photo est obligatoire.',
-            'photo.mimes' => 'La photo doit être au format JPG, PNG ou WebP.',
-            'photo.max' => 'La photo ne doit pas dépasser 5 Mo.',
             'consent_accepted.accepted' => 'Le consentement est obligatoire.',
             'poids_kg.numeric' => 'Le poids doit être un nombre.',
             'poids_kg.between' => 'Le poids doit être compris entre 40 et 200 kg.',
             'poids_kg.decimal' => 'Le poids ne peut avoir qu\'un chiffre après la virgule.',
+
+            // Messages d'erreurs pour le multi-upload
+            'photos.required' => 'Au moins une photo est obligatoire.',
+            'photos.array'    => 'Le format des photos est invalide.',
+            'photos.*.mimes'  => 'Chaque photo doit être au format JPG, PNG ou WebP.',
+            'photos.*.max'    => 'Chaque photo ne doit pas dépasser 5 Mo.',
+            'videos.array'    => 'Le format des vidéos est invalide.',
+            'videos.max'      => 'Tu ne peux pas envoyer plus de 5 vidéos.',
+            'videos.*.mimes'  => 'Chaque vidéo doit être au format MP4 ou WebM.',
+            'videos.*.max'    => 'Chaque vidéo ne doit pas dépasser 150 Mo.',
         ];
     }
 

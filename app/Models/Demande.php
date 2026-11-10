@@ -53,6 +53,13 @@ class Demande extends Model
         'poids_kg' => 'float',
     ];
 
+    protected $with = ['media'];
+
+    public function media()
+{
+    return $this->hasMany(DemandeMedia::class)->orderBy('position');
+}
+
     // La photo d'un candidat est une donnée personnelle : elle n'a JAMAIS d'adresse publique.
     // Le JSON indique seulement si une photo existe ; l'admin la récupère via
     // GET /admin/candidatures/{id}/photo, qui exige d'être connecté.
