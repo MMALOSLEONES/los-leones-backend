@@ -64,4 +64,6 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
 
     Route::get('/candidatures/media/{mediaId}', [CandidatureController::class, 'afficherMediaPrive']);
 
+    Route::post('/fighters/{id}/videos/upload-url', [FighterMediaController::class, 'videoUploadUrl']);
+
 });
