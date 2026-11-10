@@ -34,8 +34,8 @@ class CandidatureController extends Controller
         if ($request->hasFile('photos')) {
             $toutesLesPhotos = $request->file('photos');
             // reset() permet d'isoler proprement le premier fichier physique (Couverture)
-            $premierePhoto = reset($toutesLesPhotos); 
-            
+            $premierePhoto = reset($toutesLesPhotos);
+
             if ($premierePhoto) {
                 $donnees['photo'] = $premierePhoto->store('candidatures', $diskPrive);
             }
@@ -76,7 +76,7 @@ class CandidatureController extends Controller
 
         // On recharge la relation multimédia pour renvoyer un objet complet au navigateur
         return response()->json([
-            'message' => 'Candidature enregistrée avec succès !', 
+            'message' => 'Candidature enregistrée avec succès !',
             'data'    => $candidature->load('media')
         ], 201);
     }
@@ -142,5 +142,21 @@ class CandidatureController extends Controller
 
         // Servie à travers Laravel : le fichier n'a jamais d'adresse publique
         return $disk->response($demande->photo, null, ['Cache-Control' => 'private, max-age=300']);
+    }
+
+    public function afficherMediaPrive(string $mediaId)
+    {
+        // Va chercher le média dans la table demande_media
+        $media = \App\Models\DemandeMedia::findOrFail($mediaId);
+        abort_unless($media->chemin, 404);
+
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
+        $disk = Storage::disk(config('filesystems.private_uploads_disk') ?? 'local');
+        abort_unless($disk->exists($media->chemin), 404);
+
+        // Renvoie le flux du fichier sécurisé Cloudflare R2 privé
+        return $disk->response($media->chemin, null, [
+            'Cache-Control' => 'private, max-age=300'
+        ]);
     }
 }

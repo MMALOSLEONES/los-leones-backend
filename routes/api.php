@@ -60,4 +60,8 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::post('/fighters/{id}/videos/file', [FighterMediaController::class, 'addVideoFile']); 
     Route::put('/fighters/{id}/media/{mediaId}/cover', [FighterMediaController::class, 'makeCover']);
     Route::delete('/fighters/{id}/media/{mediaId}', [FighterMediaController::class, 'destroy']);
+
+
+    Route::get('/candidatures/media/{mediaId}', [CandidatureController::class, 'afficherMediaPrive']);
+
 });
