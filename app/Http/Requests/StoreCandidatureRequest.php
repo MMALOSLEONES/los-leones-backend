@@ -48,7 +48,7 @@ class StoreCandidatureRequest extends FormRequest
 
             // On valide le tableau de vidéos (optionnel, maximum 5 vidéos)
             'videos'   => ['nullable', 'array', 'max:5'],
-            'videos.*' => ['file', 'mimes:mp4,webm', 'max:153600'], // 150 Mo par vidéo max
+            'videos.*' => ['file', 'mimes:mp4,webm,mov', 'max:153600'], // 150 Mo par vidéo max
             // --- FIN DES MODIFICATIONS ---
         ];
     }
@@ -100,7 +100,7 @@ class StoreCandidatureRequest extends FormRequest
             'photos.*.max'    => 'Chaque photo ne doit pas dépasser 5 Mo.',
             'videos.array'    => 'Le format des vidéos est invalide.',
             'videos.max'      => 'Tu ne peux pas envoyer plus de 5 vidéos.',
-            'videos.*.mimes'  => 'Chaque vidéo doit être au format MP4 ou WebM.',
+            'videos.*.mimes' => 'Chaque vidéo doit être au format MP4, WebM ou MOV.',
             'videos.*.max'    => 'Chaque vidéo ne doit pas dépasser 150 Mo.',
         ];
     }

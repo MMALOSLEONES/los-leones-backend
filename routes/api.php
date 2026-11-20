@@ -7,6 +7,8 @@ use App\Http\Controllers\ArticleController;
 use App\Http\Controllers\AuthController;
 use Illuminate\Http\Request;
 use App\Http\Controllers\FighterMediaController;
+use App\Http\Controllers\PaymentController;
+
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -56,14 +58,23 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::put('/fighters/{id}', [FighterController::class, 'update']);
     Route::post('/fighters/{id}/photos', [FighterMediaController::class, 'addPhoto']);
     Route::post('/fighters/{id}/videos/upload-url', [FighterMediaController::class, 'videoUploadUrl']);
+    
+    
     Route::post('/fighters/{id}/videos', [FighterMediaController::class, 'registerVideo']);
     Route::post('/fighters/{id}/videos/file', [FighterMediaController::class, 'addVideoFile']); 
     Route::put('/fighters/{id}/media/{mediaId}/cover', [FighterMediaController::class, 'makeCover']);
-    Route::delete('/fighters/{id}/media/{mediaId}', [FighterMediaController::class, 'destroy']);
+        Route::delete('/fighters/{id}/media/{mediaId}', [FighterMediaController::class, 'destroy']);
 
 
-    Route::get('/candidatures/media/{mediaId}', [CandidatureController::class, 'afficherMediaPrive']);
+        Route::get('/candidatures/media/{mediaId}', [CandidatureController::class, 'afficherMediaPrive']);
 
-    Route::post('/fighters/{id}/videos/upload-url', [FighterMediaController::class, 'videoUploadUrl']);
 
 });
+
+
+// Route::prefix('payments')->group(function () {
+//     Route::post('/initiate', [PaymentController::class, 'initiate']);
+//     Route::post('/ipn', [PaymentController::class, 'ipn']);
+//     Route::get('/status/{demandeId}', [PaymentController::class, 'status'])
+//         ->whereUuid('demandeId');
+// });

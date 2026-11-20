@@ -35,4 +35,16 @@ return [
         ],
     ],
 
+    // 'paydunya' => [
+    //     'master_key' => env('PAYDUNYA_MASTER_KEY'),
+    //     'private_key' => env('PAYDUNYA_PRIVATE_KEY'),
+    //     'public_key' => env('PAYDUNYA_PUBLIC_KEY'),
+    //     'token' => env('PAYDUNYA_TOKEN'),
+    //     'mode' => env('PAYDUNYA_MODE', 'test'),
+
+    //     'return_url' => env('PAYDUNYA_RETURN_URL'),
+    //     'cancel_url' => env('PAYDUNYA_CANCEL_URL'),
+    //     'ipn_url' => env('PAYDUNYA_IPN_URL'),
+    // ],
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
 ];

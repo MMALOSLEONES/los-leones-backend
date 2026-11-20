@@ -4,11 +4,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;     
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 
 class Payment extends Model
 {
-   use HasFactory,HasUuids;
+    use HasFactory, HasUuids;
 
     // Désactive l'auto-incrémentation car la clé est un UUID
     public $incrementing = false;
@@ -16,10 +16,13 @@ class Payment extends Model
 
     // Liste des colonnes modifiables via Eloquent (hors clés relationnelles)
     protected $fillable = [
+        'demande_id',
         'statut',
         'montant',
         'fournisseur',
+        'passerelle',
         'ref_transaction',
+        'paydunya_token',
         'confirmed_at',
     ];
 

@@ -12,22 +12,27 @@ use Illuminate\Support\Str;
 
 // Photos et vidéos des fighters (routes admin).
 // Photos : elles passent par le site puis Laravel (déjà réduites par le navigateur).
-// Vidéos : trop lourdes pour ça. Laravel signe une adresse temporaire et le
-// NAVIGATEUR envoie le fichier directement à Cloudflare R2.
+// Vidéos : Laravel signe une adresse temporaire et le NAVIGATEUR envoie le fichier
+// directement à Cloudflare R2.
 class FighterMediaController extends Controller
 {
     private const MAX_PHOTOS = 10;
     private const MAX_VIDEOS = 5;
     private const MAX_VIDEO_BYTES = 150 * 1024 * 1024; // 150 Mo
-    private const VIDEO_TYPES = ['video/mp4' => 'mp4', 'video/webm' => 'webm'];
+    // .mov = les vidéos d'iPhone (video/quicktime)
+    private const VIDEO_TYPES = [
+        'video/mp4' => 'mp4',
+        'video/webm' => 'webm',
+        'video/quicktime' => 'mov',
+    ];
 
     private function disqueNom(): string
     {
         return config('filesystems.uploads_disk') ?? 'public';
     }
 
-    // Les comptages passent par le modèle et non par la relation : la relation
-    // est triée, et PostgreSQL refuse un tri dans une requête d'agrégat.
+    // Comptages via le modèle et non via la relation (triée) : PostgreSQL refuse
+    // un tri dans une requête d'agrégat.
     private function nombre(string $fighterId, string $type): int
     {
         return FighterMedia::where('fighter_id', $fighterId)->where('type', $type)->count();
@@ -66,8 +71,6 @@ class FighterMediaController extends Controller
     }
 
     // POST /admin/fighters/{id}/videos/upload-url
-    // Étape 1 de l'envoi d'une vidéo : Laravel signe une adresse valable 15 minutes,
-    // qui n'accepte qu'UN envoi, à ce chemin précis.
     public function videoUploadUrl(Request $request, string $id): JsonResponse
     {
         $data = $request->validate([
@@ -81,22 +84,22 @@ class FighterMediaController extends Controller
             return response()->json(['message' => 'Un fighter ne peut pas avoir plus de ' . self::MAX_VIDEOS . ' vidéos.'], 422);
         }
 
+        // Seul un disque qui n'est pas du S3 (le disque local, en développement) passe par Laravel.
+        // Si le disque EST du S3, une erreur (clés, endpoint…) doit se voir, pas se cacher.
+        if (config('filesystems.disks.' . $this->disqueNom() . '.driver') !== 's3') {
+            return response()->json(['mode' => 'server', 'chemin' => null]);
+        }
+
         $chemin = 'fighters/videos/' . Str::uuid() . '.' . self::VIDEO_TYPES[$data['content_type']];
 
         /** @var \Illuminate\Filesystem\FilesystemAdapter $disque */
         $disque = Storage::disk($this->disqueNom());
 
-        try {
-            $cible = $disque->temporaryUploadUrl(
-                $chemin,
-                now()->addMinutes(15),
-                ['ContentType' => $data['content_type']]
-            );
-        } catch (\RuntimeException $e) {
-            // Disque local (développement) : il ne sait pas signer d'adresse.
-            // Le site enverra alors le fichier à travers Laravel (voir addVideoFile).
-            return response()->json(['mode' => 'server', 'chemin' => null]);
-        }
+        $cible = $disque->temporaryUploadUrl(
+            $chemin,
+            now()->addMinutes(15),
+            ['ContentType' => $data['content_type']]
+        );
 
         return response()->json([
             'mode' => 'direct',
@@ -107,13 +110,11 @@ class FighterMediaController extends Controller
     }
 
     // POST /admin/fighters/{id}/videos
-    // Étape 2 : le navigateur a envoyé le fichier à R2 et le déclare ici.
-    // On VÉRIFIE que le fichier existe vraiment et qu'il respecte les limites.
+    // Le navigateur a envoyé le fichier à R2 et le déclare ici : on VÉRIFIE qu'il existe.
     public function registerVideo(Request $request, string $id): JsonResponse
     {
         $data = $request->validate([
-            // Uniquement un chemin du dossier des vidéos : on ne peut pas "déclarer" un autre fichier
-            'chemin' => ['required', 'string', 'regex:#^fighters/videos/[0-9a-f\-]{36}\.(mp4|webm)$#'],
+            'chemin' => ['required', 'string', 'regex:#^fighters/videos/[0-9a-f\-]{36}\.(mp4|webm|mov)$#'],
         ]);
 
         $fighter = Fighter::findOrFail($id);
@@ -134,7 +135,7 @@ class FighterMediaController extends Controller
         if ($taille > self::MAX_VIDEO_BYTES || ! array_key_exists((string) $mime, self::VIDEO_TYPES)) {
             $disque->delete($chemin);
 
-            return response()->json(['message' => 'Fichier refusé : vidéo MP4 ou WebM de 150 Mo maximum.'], 422);
+            return response()->json(['message' => 'Fichier refusé : vidéo MP4, MOV ou WebM de 150 Mo maximum.'], 422);
         }
 
         if ($this->nombre($fighter->id, 'video') >= self::MAX_VIDEOS) {
@@ -156,13 +157,12 @@ class FighterMediaController extends Controller
 
     // POST /admin/fighters/{id}/videos/file
     // DÉVELOPPEMENT LOCAL UNIQUEMENT : sans R2, le fichier passe par Laravel.
-    // En production, cette route répond 404 : les vidéos partent directement vers R2.
     public function addVideoFile(Request $request, string $id): JsonResponse
     {
         abort_unless(app()->environment('local'), 404);
 
         $request->validate([
-            'video' => ['required', 'file', 'mimetypes:video/mp4,video/webm', 'max:153600'], // 150 Mo en Ko
+            'video' => ['required', 'file', 'mimetypes:video/mp4,video/webm,video/quicktime', 'max:153600'], // 150 Mo en Ko
         ]);
 
         $fighter = Fighter::findOrFail($id);
@@ -209,7 +209,7 @@ class FighterMediaController extends Controller
     public function destroy(string $id, string $mediaId): JsonResponse
     {
         $media = FighterMedia::where('fighter_id', $id)->findOrFail($mediaId);
-        $media->delete(); // le modèle supprime aussi le fichier
+        $media->delete();
 
         return response()->json(['message' => 'Média supprimé.']);
     }
