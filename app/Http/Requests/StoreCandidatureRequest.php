@@ -37,7 +37,7 @@ class StoreCandidatureRequest extends FormRequest
             'kos' => $compteur,
             'soumissions' => $compteur,
 
-            'comment_connu' => ['nullable', 'in:Instagram,TikTok,Facebook,WhatsApp,Recommandation,Google,Autre'],
+            'comment_connu' => ['nullable', 'in:instagram, tiktok, facebook, whatsapp, recommandation, google, autre'],
             'consent_accepted' => ['accepted'],
             'poids_kg' => ['nullable', 'numeric', 'between:40,200', 'decimal:0,1'],
 
