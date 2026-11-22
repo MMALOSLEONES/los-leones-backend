@@ -47,4 +47,10 @@ return [
     //     'ipn_url' => env('PAYDUNYA_IPN_URL'),
     // ],
     'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+
+    'pay221' => [
+        'base_url' => env('PAY221_BASE_URL', 'https://apps.orvlabs.com'),
+        'api_key' => env('PAY221_API_KEY'),
+        'webhook_secret' => env('PAY221_WEBHOOK_SECRET'),
+    ],
 ];

@@ -10,11 +10,10 @@ class Payment extends Model
 {
     use HasFactory, HasUuids;
 
-    // Désactive l'auto-incrémentation car la clé est un UUID
     public $incrementing = false;
+
     protected $keyType = 'string';
 
-    // Liste des colonnes modifiables via Eloquent (hors clés relationnelles)
     protected $fillable = [
         'demande_id',
         'statut',
@@ -23,10 +22,10 @@ class Payment extends Model
         'passerelle',
         'ref_transaction',
         'paydunya_token',
+        'pay221_payment_id',
         'confirmed_at',
     ];
 
-    // Indique à Laravel que ce champ est une date/timestamp
     protected $casts = [
         'confirmed_at' => 'datetime',
     ];

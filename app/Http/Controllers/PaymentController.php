@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Demande;
 use App\Models\Payment;
-use App\Services\PayDunyaService;
+use App\Services\Pay221Service;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -17,7 +17,7 @@ use Throwable;
 class PaymentController extends Controller
 {
     public function __construct(
-        protected PayDunyaService $payDunya
+        protected Pay221Service $pay221
     ) {}
 
     /**
@@ -26,11 +26,13 @@ class PaymentController extends Controller
     /**
      * Initialiser un paiement pour une candidature.
      */
+
     public function initiate(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'demande_id' => ['required', 'uuid', 'exists:demandes,id'],
             'locale' => ['required', 'in:fr,en'],
+            'rail' => ['required', 'in:sn_wave,sn_orange'],
         ]);
 
         $demande = Demande::findOrFail($validated['demande_id']);
@@ -41,57 +43,66 @@ class PaymentController extends Controller
             ], 422);
         }
 
+        $rail = $validated['rail'];
+
+        $fournisseur = $rail === 'sn_wave'
+            ? 'wave'
+            : 'orange_money';
+
         $locale = $validated['locale'];
 
-        // Construire les URL de retour et d'annulation
-        $returnUrl = url('/payments/return') . '?' . http_build_query([
-            'locale' => $locale,
-            'demande_id' => $demande->id,
-        ]);
+        $frontendUrl = rtrim(config('services.frontend_url'), '/');
 
-        $cancelUrl = url('/payments/cancel') . '?' . http_build_query([
-            'locale' => $locale,
-            'demande_id' => $demande->id,
-        ]);
-
-        // Éviter de créer plusieurs paiements en attente
-        $payment = Payment::where('demande_id', $demande->id)
-            ->where('statut', 'initie')
-            ->latest()
-            ->first();
-
-        if (!$payment) {
-            $payment = Payment::create([
-                'demande_id' => $demande->id,
-                'statut' => 'initie',
-                'montant' => 10000,
-                'fournisseur' => null,
-                'passerelle' => 'paydunya',
-            ]);
+        if (!$frontendUrl || !str_starts_with($frontendUrl, 'https://')) {
+            return response()->json([
+                'message' => 'URL du frontend invalide.',
+            ], 500);
         }
 
-        try {
-            $invoice = $this->payDunya->createInvoice([
-                'amount' => 10000,
-                'description' => 'Frais de candidature MMA Los Leones',
-                'customer_name' => trim($demande->prenom . ' ' . $demande->nom),
-                'customer_email' => $demande->mail ?? '',
-                'customer_phone' => $demande->tel,
-                'return_url' => $returnUrl,
-                'cancel_url' => $cancelUrl,
+        $returnUrl = $frontendUrl . "/{$locale}/paiement/retour?" .
+            http_build_query([
+                'demande_id' => $demande->id,
             ]);
 
+        try {
+            // Réutiliser une tentative en attente pour éviter les doublons.
+            $payment = Payment::where('demande_id', $demande->id)
+                ->where('passerelle', '221pay')
+                ->where('fournisseur', $fournisseur)
+                ->where('statut', 'initie')
+                ->latest()
+                ->first();
+
+            if (!$payment) {
+                $payment = Payment::create([
+                    'demande_id' => $demande->id,
+                    'statut' => 'initie',
+                    'montant' => 10000,
+                    'fournisseur' => $fournisseur,
+                    'passerelle' => '221pay',
+                    'ref_transaction' => 'LL-' . Str::uuid(),
+                ]);
+            }
+
+            $result = $this->pay221->createPayment(
+                $payment,
+                $rail,
+                $returnUrl,
+                $demande->tel
+            );
+
             $payment->update([
-                'paydunya_token' => $invoice['token'],
+                'pay221_payment_id' => $result['id'],
             ]);
 
             return response()->json([
-                'message' => 'Facture créée avec succès.',
-                'payment_url' => $invoice['payment_url'],
+                'message' => 'Paiement initialisé avec succès.',
+                'payment_url' => $result['checkout_url'],
             ]);
         } catch (Throwable $e) {
-            Log::error('Erreur création facture PayDunya', [
+            Log::error('Erreur création paiement 221 Pay', [
                 'demande_id' => $demande->id,
+                'payment_id' => $payment->id ?? null,
                 'error' => $e->getMessage(),
             ]);
 
@@ -101,12 +112,60 @@ class PaymentController extends Controller
         }
     }
 
+
+    private function synchronize221Payment(Payment $payment): void
+    {
+        if (!$payment->pay221_payment_id) {
+            throw new RuntimeException('Identifiant 221 Pay manquant.');
+        }
+
+        $result = $this->pay221->getPayment(
+            $payment->pay221_payment_id
+        );
+
+        $status = strtolower($result['status'] ?? '');
+
+        DB::transaction(function () use ($payment, $status) {
+            $lockedPayment = Payment::whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $demande = Demande::whereKey($lockedPayment->demande_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            // Un paiement confirmé ne doit jamais être rétrogradé.
+            if ($lockedPayment->statut === 'reussi') {
+                return;
+            }
+
+            if ($status === 'confirmed') {
+                $lockedPayment->update([
+                    'statut' => 'reussi',
+                    'confirmed_at' => now(),
+                ]);
+
+                if ($demande->status === 'en_attente_paiement') {
+                    $demande->update([
+                        'status' => 'paye',
+                    ]);
+                }
+            } elseif (in_array($status, ['failed', 'expired'], true)) {
+                $lockedPayment->update([
+                    'statut' => 'echoue',
+                ]);
+            }
+        });
+    }
+
+
     /**
      * Retour du candidat après paiement.
      */
     /**
      * Retour du candidat après paiement.
      */
+
     public function handleReturn(Request $request)
     {
         $locale = in_array($request->query('locale'), ['fr', 'en'], true)
@@ -114,45 +173,35 @@ class PaymentController extends Controller
             : 'fr';
 
         $demandeId = $request->query('demande_id');
-        $token = $request->query('token');
 
-        $frontendUrl = rtrim(config('app.frontend_url'), '/');
+        $frontendUrl = rtrim(config('services.frontend_url'), '/');
 
-        // Si PayDunya ne fournit pas de token, rediriger vers l'annulation.
-        if (!$token) {
-            return redirect(
-                $frontendUrl . "/{$locale}/paiement/annule?" .
-                    http_build_query(['demande_id' => $demandeId])
-            );
+        if (!$demandeId) {
+            return redirect($frontendUrl . "/{$locale}/paiement/annule");
         }
 
-        $payment = Payment::where('paydunya_token', $token)->first();
+        $payment = Payment::where('demande_id', $demandeId)
+            ->where('passerelle', '221pay')
+            ->latest()
+            ->first();
 
-        if (!$payment) {
-            return redirect(
-                $frontendUrl . "/{$locale}/paiement/annule?" .
-                    http_build_query(['demande_id' => $demandeId])
-            );
+        if ($payment && $payment->pay221_payment_id) {
+            try {
+                $this->synchronize221Payment($payment);
+            } catch (Throwable $e) {
+                Log::error('Erreur vérification retour 221 Pay', [
+                    'payment_id' => $payment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
-        try {
-            // Vérifier le statut réel auprès de PayDunya.
-            $this->synchronizePayment($payment);
-        } catch (Throwable $e) {
-            Log::error('Erreur vérification retour PayDunya', [
-                'payment_id' => $payment->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        // Utiliser l'identifiant de la candidature lié au paiement.
         return redirect(
             $frontendUrl . "/{$locale}/paiement/retour?" .
-                http_build_query([
-                    'demande_id' => $payment->demande_id,
-                ])
+                http_build_query(['demande_id' => $demandeId])
         );
     }
+
 
     /**
      * Annulation du paiement.
@@ -168,7 +217,7 @@ class PaymentController extends Controller
 
         $demandeId = $request->query('demande_id');
 
-        $frontendUrl = rtrim(config('app.frontend_url'), '/');
+        $frontendUrl = rtrim(config('services.frontend_url'), '/');
 
         return redirect(
             $frontendUrl . "/{$locale}/paiement/annule?" .
@@ -323,5 +372,119 @@ class PaymentController extends Controller
                 }
             }
         });
+    }
+
+
+
+    public function webhook(Request $request): JsonResponse
+    {
+        $rawBody = $request->getContent();
+
+        $timestamp = (string) $request->header('X-221-Timestamp');
+        $signature = (string) $request->header('X-221-Signature');
+        $secret = config('services.pay221.webhook_secret');
+
+        if (!$secret || !ctype_digit($timestamp) || !$signature) {
+            return response()->json(['message' => 'Signature invalide.'], 400);
+        }
+
+        if (abs(time() - (int) $timestamp) > 300) {
+            return response()->json(['message' => 'Notification expirée.'], 400);
+        }
+
+        $expected = 'v1=' . hash_hmac(
+            'sha256',
+            $timestamp . '.' . $rawBody,
+            $secret
+        );
+
+        if (!hash_equals($expected, $signature)) {
+            return response()->json(['message' => 'Signature invalide.'], 400);
+        }
+
+        $event = json_decode($rawBody, true);
+
+        if (!is_array($event) || empty($event['id']) || empty($event['type'])) {
+            return response()->json(['message' => 'Événement invalide.'], 400);
+        }
+
+        // Événement de test envoyé depuis le tableau de bord 221 Pay.
+        if ($event['type'] === 'test.ping') {
+            return response()->json(['message' => 'Webhook de test reçu.']);
+        }
+
+        if (
+            !str_starts_with($event['type'], 'payment.') ||
+            empty($event['object_id'])
+        ) {
+            return response()->json(['message' => 'Événement ignoré.']);
+        }
+
+        try {
+            // Relire le paiement auprès de 221 Pay : son API fait foi.
+            $result = $this->pay221->getPayment($event['object_id']);
+
+            $payment = Payment::where('pay221_payment_id', $event['object_id'])
+                ->first();
+
+            if (!$payment) {
+                return response()->json(['message' => 'Paiement introuvable.'], 404);
+            }
+
+            $status = strtolower($result['status'] ?? '');
+
+            DB::transaction(function () use ($event, $payment, $status) {
+                // L'identifiant unique empêche de traiter deux fois le même événement.
+                $inserted = DB::table('pay221_webhook_events')->insertOrIgnore([
+                    'id' => $event['id'],
+                    'type' => $event['type'],
+                    'processed_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                if (!$inserted) {
+                    return;
+                }
+
+                $lockedPayment = Payment::whereKey($payment->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                $demande = Demande::whereKey($lockedPayment->demande_id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+
+                if ($lockedPayment->statut === 'reussi') {
+                    return;
+                }
+
+                if ($status === 'confirmed') {
+                    $lockedPayment->update([
+                        'statut' => 'reussi',
+                        'confirmed_at' => now(),
+                    ]);
+
+                    if ($demande->status === 'en_attente_paiement') {
+                        $demande->update(['status' => 'paye']);
+                    }
+                } elseif (in_array($status, ['failed', 'expired'], true)) {
+                    $lockedPayment->update([
+                        'statut' => 'echoue',
+                    ]);
+                }
+            });
+
+            return response()->json(['message' => 'Notification traitée.']);
+        } catch (Throwable $e) {
+            Log::error('Erreur webhook 221 Pay', [
+                'event_id' => $event['id'],
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Erreur de traitement.',
+            ], 500);
+        }
     }
 }
