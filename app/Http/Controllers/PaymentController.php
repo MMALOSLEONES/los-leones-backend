@@ -59,9 +59,10 @@ class PaymentController extends Controller
             ], 500);
         }
 
-        $returnUrl = $frontendUrl . "/{$locale}/paiement/retour?" .
+        $returnUrl = url('/api/payments/return') . '?' .
             http_build_query([
                 'demande_id' => $demande->id,
+                'locale' => $locale,
             ]);
 
         try {
@@ -113,19 +114,57 @@ class PaymentController extends Controller
     }
 
 
+
     private function synchronize221Payment(Payment $payment): void
     {
         if (!$payment->pay221_payment_id) {
             throw new RuntimeException('Identifiant 221 Pay manquant.');
         }
 
-        $result = $this->pay221->getPayment(
-            $payment->pay221_payment_id
-        );
+        if ($payment->passerelle !== '221pay') {
+            throw new RuntimeException('Cette transaction ne provient pas de 221 Pay.');
+        }
+
+        // Récupérer les informations officielles auprès de 221 Pay.
+        $result = $this->pay221->getPayment($payment->pay221_payment_id);
+
+        // Vérifier l'identifiant du paiement.
+        if (
+            empty($result['id']) ||
+            $result['id'] !== $payment->pay221_payment_id
+        ) {
+            throw new RuntimeException('Identifiant du paiement invalide.');
+        }
+
+        // Vérifier la référence marchand.
+        if (
+            empty($result['merchant_reference']) ||
+            $result['merchant_reference'] !== $payment->ref_transaction
+        ) {
+            throw new RuntimeException('Référence marchand invalide.');
+        }
+
+        // Vérifier le montant.
+        if (
+            !isset($result['amount']) ||
+            !is_numeric($result['amount']) ||
+            (float) $result['amount'] !== (float) $payment->montant
+        ) {
+            throw new RuntimeException('Montant du paiement invalide.');
+        }
+
+        // Vérifier la devise.
+        if (strtoupper($result['currency'] ?? '') !== 'XOF') {
+            throw new RuntimeException('Devise du paiement invalide.');
+        }
 
         $status = strtolower($result['status'] ?? '');
 
-        DB::transaction(function () use ($payment, $status) {
+        if (!in_array($status, ['confirmed', 'failed', 'expired'], true)) {
+            throw new RuntimeException('Statut 221 Pay non reconnu : ' . $status);
+        }
+
+        DB::transaction(function () use ($payment, $status, $result) {
             $lockedPayment = Payment::whereKey($payment->id)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -134,7 +173,19 @@ class PaymentController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            // Un paiement confirmé ne doit jamais être rétrogradé.
+            // Revérifier les informations locales après verrouillage.
+            if (
+                $lockedPayment->pay221_payment_id !== $result['id'] ||
+                $lockedPayment->ref_transaction !== $result['merchant_reference'] ||
+                (float) $lockedPayment->montant !== (float) $result['amount'] ||
+                $lockedPayment->passerelle !== '221pay'
+            ) {
+                throw new RuntimeException(
+                    'Les informations du paiement ne correspondent plus aux données locales.'
+                );
+            }
+
+            // Un paiement déjà réussi ne doit jamais être rétrogradé.
             if ($lockedPayment->statut === 'reussi') {
                 return;
             }
@@ -157,6 +208,7 @@ class PaymentController extends Controller
             }
         });
     }
+
 
 
     /**
@@ -376,6 +428,7 @@ class PaymentController extends Controller
 
 
 
+
     public function webhook(Request $request): JsonResponse
     {
         $rawBody = $request->getContent();
@@ -384,14 +437,17 @@ class PaymentController extends Controller
         $signature = (string) $request->header('X-221-Signature');
         $secret = config('services.pay221.webhook_secret');
 
+        // Vérifier la présence des informations de signature.
         if (!$secret || !ctype_digit($timestamp) || !$signature) {
             return response()->json(['message' => 'Signature invalide.'], 400);
         }
 
+        // Vérifier que la notification n'est pas trop ancienne.
         if (abs(time() - (int) $timestamp) > 300) {
             return response()->json(['message' => 'Notification expirée.'], 400);
         }
 
+        // Vérifier la signature HMAC.
         $expected = 'v1=' . hash_hmac(
             'sha256',
             $timestamp . '.' . $rawBody,
@@ -413,32 +469,79 @@ class PaymentController extends Controller
             return response()->json(['message' => 'Webhook de test reçu.']);
         }
 
-        if (
-            !str_starts_with($event['type'], 'payment.') ||
-            empty($event['object_id'])
-        ) {
+        // Accepter uniquement les événements de paiement connus.
+        if (!in_array($event['type'], [
+            'payment.succeeded',
+            'payment.failed',
+            'payment.expired',
+        ], true) || empty($event['object_id'])) {
             return response()->json(['message' => 'Événement ignoré.']);
         }
 
         try {
-            // Relire le paiement auprès de 221 Pay : son API fait foi.
+            // L'API 221 Pay fait foi : récupérer le paiement réel.
             $result = $this->pay221->getPayment($event['object_id']);
 
-            $payment = Payment::where('pay221_payment_id', $event['object_id'])
-                ->first();
+            $payment = Payment::where(
+                'pay221_payment_id',
+                $event['object_id']
+            )->first();
 
             if (!$payment) {
-                return response()->json(['message' => 'Paiement introuvable.'], 404);
+                return response()->json([
+                    'message' => 'Paiement introuvable.',
+                ], 404);
+            }
+
+            // Vérifier l'identifiant du paiement.
+            if (
+                empty($result['id']) ||
+                $result['id'] !== $payment->pay221_payment_id
+            ) {
+                throw new RuntimeException('Identifiant du paiement invalide.');
+            }
+
+            // Vérifier la passerelle.
+            if ($payment->passerelle !== '221pay') {
+                throw new RuntimeException('Passerelle de paiement invalide.');
+            }
+
+            // Vérifier la référence marchand.
+            if (
+                empty($result['merchant_reference']) ||
+                $result['merchant_reference'] !== $payment->ref_transaction
+            ) {
+                throw new RuntimeException('Référence marchand invalide.');
+            }
+
+            // Vérifier le montant.
+            if (
+                !isset($result['amount']) ||
+                !is_numeric($result['amount']) ||
+                (float) $result['amount'] !== (float) $payment->montant
+            ) {
+                throw new RuntimeException('Montant du paiement invalide.');
+            }
+
+            // Vérifier la devise.
+            if (strtoupper($result['currency'] ?? '') !== 'XOF') {
+                throw new RuntimeException('Devise du paiement invalide.');
             }
 
             $status = strtolower($result['status'] ?? '');
 
-            DB::transaction(function () use ($event, $payment, $status) {
-                // L'identifiant unique empêche de traiter deux fois le même événement.
+            if (!in_array($status, ['confirmed', 'failed', 'expired'], true)) {
+                throw new RuntimeException(
+                    'Statut 221 Pay non reconnu : ' . $status
+                );
+            }
+
+            DB::transaction(function () use ($event, $payment, $result, $status) {
+                // Empêcher le traitement plusieurs fois du même événement.
                 $inserted = DB::table('pay221_webhook_events')->insertOrIgnore([
                     'id' => $event['id'],
                     'type' => $event['type'],
-                    'processed_at' => now(),
+                    'processed_at' => null,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -455,7 +558,27 @@ class PaymentController extends Controller
                     ->lockForUpdate()
                     ->firstOrFail();
 
+                // Revérifier les informations locales après verrouillage.
+                if (
+                    $lockedPayment->pay221_payment_id !== $result['id'] ||
+                    $lockedPayment->ref_transaction !== $result['merchant_reference'] ||
+                    (float) $lockedPayment->montant !== (float) $result['amount'] ||
+                    $lockedPayment->passerelle !== '221pay'
+                ) {
+                    throw new RuntimeException(
+                        'Les informations du paiement ne correspondent pas aux données locales.'
+                    );
+                }
+
+                // Un paiement réussi ne doit jamais être rétrogradé.
                 if ($lockedPayment->statut === 'reussi') {
+                    DB::table('pay221_webhook_events')
+                        ->where('id', $event['id'])
+                        ->update([
+                            'processed_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+
                     return;
                 }
 
@@ -466,16 +589,28 @@ class PaymentController extends Controller
                     ]);
 
                     if ($demande->status === 'en_attente_paiement') {
-                        $demande->update(['status' => 'paye']);
+                        $demande->update([
+                            'status' => 'paye',
+                        ]);
                     }
                 } elseif (in_array($status, ['failed', 'expired'], true)) {
                     $lockedPayment->update([
                         'statut' => 'echoue',
                     ]);
                 }
+
+                // Marquer l'événement comme traité après la synchronisation.
+                DB::table('pay221_webhook_events')
+                    ->where('id', $event['id'])
+                    ->update([
+                        'processed_at' => now(),
+                        'updated_at' => now(),
+                    ]);
             });
 
-            return response()->json(['message' => 'Notification traitée.']);
+            return response()->json([
+                'message' => 'Notification traitée.',
+            ]);
         } catch (Throwable $e) {
             Log::error('Erreur webhook 221 Pay', [
                 'event_id' => $event['id'],

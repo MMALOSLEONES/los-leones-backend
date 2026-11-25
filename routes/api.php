@@ -69,6 +69,7 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::get('/candidatures/media/{mediaId}', [CandidatureController::class, 'afficherMediaPrive']);
 });
 
+
 Route::prefix('payments')->group(function () {
 
     // Initialisation d'un paiement 221 Pay
@@ -76,6 +77,12 @@ Route::prefix('payments')->group(function () {
 
     // Réception des notifications 221 Pay
     Route::post('/221/webhook', [PaymentController::class, 'webhook']);
+
+    // Retour du candidat après paiement
+    Route::get('/return', [PaymentController::class, 'handleReturn']);
+
+    // Annulation du paiement
+    Route::get('/cancel', [PaymentController::class, 'handleCancel']);
 
     // Vérification du statut d'un paiement
     Route::get('/status/{demandeId}', [PaymentController::class, 'status'])
