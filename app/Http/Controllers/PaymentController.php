@@ -278,66 +278,7 @@ class PaymentController extends Controller
                 ])
         );
     }
-    /**
-     * Notification IPN de PayDunya.
-     */
-    public function ipn(Request $request): JsonResponse
-    {
-        $data = $request->input('data');
-
-        if (!is_array($data)) {
-            return response()->json([
-                'message' => 'Données IPN invalides.',
-            ], 400);
-        }
-
-        $receivedHash = $data['hash'] ?? null;
-        $masterKey = config('services.paydunya.master_key');
-
-        if (
-            !$receivedHash ||
-            !$masterKey ||
-            !hash_equals(hash('sha512', $masterKey), $receivedHash)
-        ) {
-            return response()->json([
-                'message' => 'Signature invalide.',
-            ], 403);
-        }
-
-        $token = $data['invoice']['token'] ?? null;
-
-        if (!$token) {
-            return response()->json([
-                'message' => 'Token manquant.',
-            ], 400);
-        }
-
-        $payment = Payment::where('paydunya_token', $token)->first();
-
-        if (!$payment) {
-            return response()->json([
-                'message' => 'Paiement introuvable.',
-            ], 404);
-        }
-
-        try {
-            $this->synchronizePayment($payment);
-
-            return response()->json([
-                'message' => 'Notification traitée.',
-            ]);
-        } catch (Throwable $e) {
-            Log::error('Erreur IPN PayDunya', [
-                'payment_id' => $payment->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'message' => 'Erreur de traitement.',
-            ], 500);
-        }
-    }
-
+   
     /**
      * Vérifier le statut du paiement d'une candidature.
      */
@@ -380,52 +321,7 @@ class PaymentController extends Controller
         ]);
     }
 
-    /**
-     * Vérifier le statut réel auprès de PayDunya
-     * et synchroniser les données locales.
-     */
-    private function synchronizePayment(Payment $payment): void
-    {
-        $invoice = $this->payDunya->confirmInvoice(
-            $payment->paydunya_token
-        );
-
-        $status = strtolower(
-            $invoice['status'] ?? $invoice['invoice']['status'] ?? ''
-        );
-
-        DB::transaction(function () use ($payment, $status, $invoice) {
-            $lockedPayment = Payment::whereKey($payment->id)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            $demande = Demande::whereKey($lockedPayment->demande_id)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            if ($status === 'completed') {
-                if ($lockedPayment->statut !== 'reussi') {
-                    $lockedPayment->update([
-                        'statut' => 'reussi',
-                        'confirmed_at' => now(),
-                    ]);
-                }
-
-                if ($demande->status === 'en_attente_paiement') {
-                    $demande->update([
-                        'status' => 'paye',
-                    ]);
-                }
-            } elseif (in_array($status, ['failed', 'cancelled'], true)) {
-                if ($lockedPayment->statut !== 'reussi') {
-                    $lockedPayment->update([
-                        'statut' => 'echoue',
-                    ]);
-                }
-            }
-        });
-    }
-
+ 
 
 
 
